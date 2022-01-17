@@ -1,5 +1,4 @@
 ﻿using System.IO;
-using System.Runtime.InteropServices;
 using BenchmarkDotNet.Attributes;
 using SharpQoi;
 
@@ -25,8 +24,8 @@ namespace Benchmarks
 
             fixed (byte* qoiData = qoi)
             {
-                void* raw = Qoi.qoi_decode(qoiData, (uint)qoi.Length, out var desc, 0);
-                NativeMemory.Free(raw);
+                void* raw = Qoi.Decode(qoiData, (uint)qoi.Length, out var desc, 0);
+                Qoi.Free(raw);
             }
         }
     }

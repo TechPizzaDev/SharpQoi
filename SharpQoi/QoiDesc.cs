@@ -1,6 +1,6 @@
 ﻿namespace SharpQoi
 {
-    public struct qoi_desc
+    public struct QoiDesc
     {
         public uint width;
         public uint height;

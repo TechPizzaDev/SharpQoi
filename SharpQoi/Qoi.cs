@@ -29,32 +29,13 @@ namespace SharpQoi
         //{
         //}
 
-        /* Encode raw RGB or RGBA pixels into a QOI image in memory.
-        The function either returns null on failure (invalid parameters or malloc
-        failed) or a pointer to the encoded data on success. On success the out_len
-        is set to the size in bytes of the encoded data.
-        The returned qoi data should be free()d after use. */
-        //void* qoi_encode(void* data, qoi_desc desc, out int out_len)
-        //{
-        //}
-
-
-        /* Decode a QOI image from memory.
-        The function either returns null on failure (invalid parameters or malloc
-        failed) or a pointer to the decoded pixels. On success, the qoi_desc struct
-        is filled with the description from the file header.
-        The returned pixel data should be free()d after use. */
-        //void* qoi_decode(void* data, int size, out qoi_desc desc, int channels)
-        //{
-        //}
-
         /* -----------------------------------------------------------------------------
         Implementation */
 
-        public static void QOI_ZEROARR<T>(T* a)
+        static void QOI_ZEROARR<T>(T* a, uint count)
             where T : unmanaged
         {
-            Unsafe.InitBlockUnaligned((byte*)a, 0, (uint)Unsafe.SizeOf<T>());
+            Unsafe.InitBlockUnaligned((byte*)a, 0, (uint)Unsafe.SizeOf<T>() * count);
         }
 
         public const int QOI_OP_INDEX = 0x00; // 00xxxxxx
@@ -64,11 +45,11 @@ namespace SharpQoi
         public const int QOI_OP_RGB = 0xfe;   // 11111110
         public const int QOI_OP_RGBA = 0xff;  // 11111111
 
-        public const int QOI_MASK_2 = 0xc0;// 11000000
+        public const int QOI_MASK_2 = 0xc0; // 11000000
 
-        public static int QOI_COLOR_HASH(qoi_rgba_t rgba)
+        public static int QOI_COLOR_HASH(QoiRgba rgba)
         {
-            return (rgba.r * 3 + rgba.g * 5 + rgba.b * 7 + rgba.a * 11);
+            return rgba.R * 3 + rgba.G * 5 + rgba.B * 7 + rgba.A * 11;
         }
 
         public const uint QOI_MAGIC =
@@ -85,19 +66,9 @@ namespace SharpQoi
         enough for anybody. */
         public const uint QOI_PIXELS_MAX = 400000000;
 
-        public struct qoi_rgba_t
-        {
-            public byte r, g, b, a;
+        static ReadOnlySpan<byte> Padding => new byte[] { 0, 0, 0, 0, 0, 0, 0, 1 };
 
-            public bool Equals(qoi_rgba_t other)
-            {
-                return Unsafe.As<qoi_rgba_t, int>(ref this) == Unsafe.As<qoi_rgba_t, int>(ref other);
-            }
-        }
-
-        static ReadOnlySpan<byte> qoi_padding => new byte[] { 0, 0, 0, 0, 0, 0, 0, 1 };
-
-        static void qoi_write_32(byte* bytes, uint* p, uint v)
+        static void Write_32(byte* bytes, uint* p, uint v)
         {
             bytes[(*p)++] = (byte)((0xff000000 & v) >> 24);
             bytes[(*p)++] = (byte)((0x00ff0000 & v) >> 16);
@@ -105,7 +76,7 @@ namespace SharpQoi
             bytes[(*p)++] = (byte)(0x000000ff & v);
         }
 
-        static uint qoi_read_32(byte* bytes, int* p)
+        static uint Read_32(byte* bytes, uint* p)
         {
             uint a = bytes[(*p)++];
             uint b = bytes[(*p)++];
@@ -114,14 +85,25 @@ namespace SharpQoi
             return a << 24 | b << 16 | c << 8 | d;
         }
 
-        public static void* qoi_encode(void* data, qoi_desc desc, out uint out_len)
+        /// <summary>
+        /// Encode pixels into a QOI image in memory.
+        /// </summary>
+        /// <param name="data"></param>
+        /// <param name="desc"></param>
+        /// <param name="out_len">
+        /// On success, set to the size in bytes of the encoded data.
+        /// </param>
+        /// <returns>
+        /// On success, returns a pointer to the encoded data.
+        /// On failure (invalid parameters), returns null.
+        /// </returns>
+        /// <remarks>
+        /// The returned QOI data needs to be freed with <see cref="Free"/>.
+        /// </remarks>
+        /// <exception cref="OutOfMemoryException"></exception>
+        public static void* Encode(void* data, QoiDesc desc, out uint out_len)
         {
-            uint max_size, p, run;
-            uint px_len, px_end, px_pos, channels;
-            byte* bytes;
-            byte* pixels; // const
-            qoi_rgba_t* index = stackalloc qoi_rgba_t[64];
-            qoi_rgba_t px, px_prev;
+            QoiRgba* index = stackalloc QoiRgba[64];
 
             if (data == null ||
                 desc.width == 0 || desc.height == 0 ||
@@ -133,46 +115,46 @@ namespace SharpQoi
                 return null;
             }
 
-            max_size =
+            uint max_size =
                 desc.width * desc.height * (uint)(desc.channels + 1) +
-                QOI_HEADER_SIZE + (uint)qoi_padding.Length;
+                QOI_HEADER_SIZE + (uint)Padding.Length;
 
-            p = 0;
-            bytes = (byte*)NativeMemory.Alloc(max_size);
+            uint p = 0;
+            byte* bytes = (byte*)Alloc(max_size);
 
-            qoi_write_32(bytes, &p, QOI_MAGIC);
-            qoi_write_32(bytes, &p, desc.width);
-            qoi_write_32(bytes, &p, desc.height);
+            Write_32(bytes, &p, QOI_MAGIC);
+            Write_32(bytes, &p, desc.width);
+            Write_32(bytes, &p, desc.height);
             bytes[p++] = desc.channels;
             bytes[p++] = desc.colorspace;
 
+            byte* pixels = (byte*)data;
 
-            pixels = (byte*)data;
+            QOI_ZEROARR(index, 64);
 
-            QOI_ZEROARR(index);
+            uint run = 0;
+            QoiRgba px_prev;
+            px_prev.R = 0;
+            px_prev.G = 0;
+            px_prev.B = 0;
+            px_prev.A = 255;
+            QoiRgba px = px_prev;
 
-            run = 0;
-            px_prev.r = 0;
-            px_prev.g = 0;
-            px_prev.b = 0;
-            px_prev.a = 255;
-            px = px_prev;
+            uint px_len = desc.width * desc.height * (uint)desc.channels;
+            uint px_end = px_len - desc.channels;
+            uint channels = desc.channels;
 
-            px_len = desc.width * desc.height * (uint)desc.channels;
-            px_end = px_len - desc.channels;
-            channels = desc.channels;
-
-            for (px_pos = 0; px_pos < px_len; px_pos += channels)
+            for (uint px_pos = 0; px_pos < px_len; px_pos += channels)
             {
                 if (channels == 4)
                 {
-                    px = *(qoi_rgba_t*)(pixels + px_pos);
+                    px = *(QoiRgba*)(pixels + px_pos);
                 }
                 else
                 {
-                    px.r = pixels[px_pos + 0];
-                    px.g = pixels[px_pos + 1];
-                    px.b = pixels[px_pos + 2];
+                    px.R = pixels[px_pos + 0];
+                    px.G = pixels[px_pos + 1];
+                    px.B = pixels[px_pos + 2];
                 }
 
                 if (px.Equals(px_prev))
@@ -186,15 +168,13 @@ namespace SharpQoi
                 }
                 else
                 {
-                    int index_pos;
-
                     if (run > 0)
                     {
                         bytes[p++] = (byte)(QOI_OP_RUN | (run - 1));
                         run = 0;
                     }
 
-                    index_pos = QOI_COLOR_HASH(px) % 64;
+                    int index_pos = QOI_COLOR_HASH(px) % 64;
 
                     if (index[index_pos].Equals(px))
                     {
@@ -204,11 +184,11 @@ namespace SharpQoi
                     {
                         index[index_pos] = px;
 
-                        if (px.a == px_prev.a)
+                        if (px.A == px_prev.A)
                         {
-                            int vr = px.r - px_prev.r;
-                            int vg = px.g - px_prev.g;
-                            int vb = px.b - px_prev.b;
+                            int vr = px.R - px_prev.R;
+                            int vg = px.G - px_prev.G;
+                            int vb = px.B - px_prev.B;
 
                             int vg_r = vr - vg;
                             int vg_b = vb - vg;
@@ -233,25 +213,25 @@ namespace SharpQoi
                             else
                             {
                                 bytes[p++] = QOI_OP_RGB;
-                                bytes[p++] = px.r;
-                                bytes[p++] = px.g;
-                                bytes[p++] = px.b;
+                                bytes[p++] = px.R;
+                                bytes[p++] = px.G;
+                                bytes[p++] = px.B;
                             }
                         }
                         else
                         {
                             bytes[p++] = QOI_OP_RGBA;
-                            bytes[p++] = px.r;
-                            bytes[p++] = px.g;
-                            bytes[p++] = px.b;
-                            bytes[p++] = px.a;
+                            bytes[p++] = px.R;
+                            bytes[p++] = px.G;
+                            bytes[p++] = px.B;
+                            bytes[p++] = px.A;
                         }
                     }
                 }
                 px_prev = px;
             }
 
-            ReadOnlySpan<byte> padding = qoi_padding;
+            ReadOnlySpan<byte> padding = Padding;
             for (int i = 0; i < padding.Length; i++)
             {
                 bytes[p++] = padding[i];
@@ -261,39 +241,47 @@ namespace SharpQoi
             return bytes;
         }
 
-        public static void* qoi_decode(void* data, uint size, out qoi_desc desc, uint channels)
+        /// <summary>
+        /// Decode a QOI image from memory.
+        /// </summary>
+        /// <param name="data"></param>
+        /// <param name="size"></param>
+        /// <param name="desc">Filled with the description from the file header.</param>
+        /// <param name="channels">Target amount of channels. Can be zero.</param>
+        /// <returns>
+        /// On success, returns a pointer to the decoded pixels.
+        /// On failure (invalid parameters), returns null.
+        /// </returns>
+        /// <remarks>
+        /// The returned pixel data needs to be freed with <see cref="Free"/>.
+        /// </remarks>
+        /// <exception cref="OutOfMemoryException"></exception>
+        public static void* Decode(void* data, uint size, out QoiDesc desc, uint channels)
         {
-            byte* bytes;
-            uint header_magic;
-            byte* pixels;
-            qoi_rgba_t* index = stackalloc qoi_rgba_t[64];
-            qoi_rgba_t px;
-            uint px_len, chunks_len, px_pos;
-            int p = 0, run = 0;
+            QoiRgba* index = stackalloc QoiRgba[64];
 
             if (data == null ||
                 (channels != 0 && channels != 3 && channels != 4) ||
-                size < QOI_HEADER_SIZE + qoi_padding.Length)
+                size < QOI_HEADER_SIZE + Padding.Length)
             {
                 desc = default;
                 return null;
             }
 
-            bytes = (byte*)data;
+            uint p = 0;
+            byte* bytes = (byte*)data;
 
-            header_magic = qoi_read_32(bytes, &p);
-            desc.width = qoi_read_32(bytes, &p);
-            desc.height = qoi_read_32(bytes, &p);
+            uint header_magic = Read_32(bytes, &p);
+            desc.width = Read_32(bytes, &p);
+            desc.height = Read_32(bytes, &p);
             desc.channels = bytes[p++];
             desc.colorspace = bytes[p++];
 
-            if (
-                desc.width == 0 || desc.height == 0 ||
+            if (desc.width == 0 || desc.height == 0 ||
                 desc.channels < 3 || desc.channels > 4 ||
                 desc.colorspace > 1 ||
                 header_magic != QOI_MAGIC ||
-                desc.height >= QOI_PIXELS_MAX / desc.width
-            )
+                desc.height >= QOI_PIXELS_MAX / desc.width)
             {
                 return null;
             }
@@ -303,17 +291,21 @@ namespace SharpQoi
                 channels = desc.channels;
             }
 
-            px_len = desc.width * desc.height * channels;
-            pixels = (byte*)NativeMemory.Alloc(px_len);
+            uint px_len = desc.width * desc.height * channels;
+            byte* pixels = (byte*)Alloc(px_len);
 
-            QOI_ZEROARR(index);
-            px.r = 0;
-            px.g = 0;
-            px.b = 0;
-            px.a = 255;
+            QOI_ZEROARR(index, 64);
 
-            chunks_len = size - (uint)qoi_padding.Length;
-            for (px_pos = 0; px_pos < px_len; px_pos += channels)
+            QoiRgba px;
+            px.R = 0;
+            px.G = 0;
+            px.B = 0;
+            px.A = 255;
+
+            uint run = 0;
+            uint chunks_len = size - (uint)Padding.Length;
+
+            for (uint px_pos = 0; px_pos < px_len; px_pos += channels)
             {
                 if (run > 0)
                 {
@@ -321,20 +313,20 @@ namespace SharpQoi
                 }
                 else if (p < chunks_len)
                 {
-                    int b1 = bytes[p++];
+                    uint b1 = bytes[p++];
 
                     if (b1 == QOI_OP_RGB)
                     {
-                        px.r = bytes[p++];
-                        px.g = bytes[p++];
-                        px.b = bytes[p++];
+                        px.R = bytes[p++];
+                        px.G = bytes[p++];
+                        px.B = bytes[p++];
                     }
                     else if (b1 == QOI_OP_RGBA)
                     {
-                        px.r = bytes[p++];
-                        px.g = bytes[p++];
-                        px.b = bytes[p++];
-                        px.a = bytes[p++];
+                        px.R = bytes[p++];
+                        px.G = bytes[p++];
+                        px.B = bytes[p++];
+                        px.A = bytes[p++];
                     }
                     else if ((b1 & QOI_MASK_2) == QOI_OP_INDEX)
                     {
@@ -342,21 +334,21 @@ namespace SharpQoi
                     }
                     else if ((b1 & QOI_MASK_2) == QOI_OP_DIFF)
                     {
-                        px.r += (byte)(((b1 >> 4) & 0x03) - 2);
-                        px.g += (byte)(((b1 >> 2) & 0x03) - 2);
-                        px.b += (byte)((b1 & 0x03) - 2);
+                        px.R += (byte)(((b1 >> 4) & 0x03) - 2);
+                        px.G += (byte)(((b1 >> 2) & 0x03) - 2);
+                        px.B += (byte)((b1 & 0x03) - 2);
                     }
                     else if ((b1 & QOI_MASK_2) == QOI_OP_LUMA)
                     {
                         int b2 = bytes[p++];
-                        int vg = (b1 & 0x3f) - 32;
-                        px.r += (byte)(vg - 8 + ((b2 >> 4) & 0x0f));
-                        px.g += (byte)(vg);
-                        px.b += (byte)(vg - 8 + (b2 & 0x0f));
+                        int vg = (int)((b1 & 0x3f) - 32);
+                        px.R += (byte)(vg - 8 + ((b2 >> 4) & 0x0f));
+                        px.G += (byte)vg;
+                        px.B += (byte)(vg - 8 + (b2 & 0x0f));
                     }
                     else if ((b1 & QOI_MASK_2) == QOI_OP_RUN)
                     {
-                        run = (b1 & 0x3f);
+                        run = b1 & 0x3f;
                     }
 
                     index[QOI_COLOR_HASH(px) % 64] = px;
@@ -364,17 +356,32 @@ namespace SharpQoi
 
                 if (channels == 4)
                 {
-                    *(qoi_rgba_t*)(pixels + px_pos) = px;
+                    *(QoiRgba*)(pixels + px_pos) = px;
                 }
                 else
                 {
-                    pixels[px_pos + 0] = px.r;
-                    pixels[px_pos + 1] = px.g;
-                    pixels[px_pos + 2] = px.b;
+                    pixels[px_pos + 0] = px.R;
+                    pixels[px_pos + 1] = px.G;
+                    pixels[px_pos + 2] = px.B;
                 }
             }
 
             return pixels;
+        }
+
+        public static void* Alloc(nuint byteCount)
+        {
+            return NativeMemory.Alloc(byteCount);
+        }
+
+        public static void* ReAlloc(void* data, nuint byteCount)
+        {
+            return NativeMemory.Realloc(data, byteCount);
+        }
+
+        public static void Free(void* data)
+        {
+            NativeMemory.Free(data);
         }
     }
 }
