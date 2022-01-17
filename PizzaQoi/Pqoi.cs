@@ -53,10 +53,10 @@ namespace PizzaQoi
         }
 
         public const uint QOI_MAGIC =
-            ((uint)'q') << 24 |
-            ((uint)'o') << 16 |
-            ((uint)'i') << 8 |
-            'f';
+            ((uint)'p') << 24 |
+            ((uint)'q') << 16 |
+            ((uint)'o') << 8 |
+            'i';
 
         public const int QOI_HEADER_SIZE = 14;
 
@@ -195,8 +195,7 @@ namespace PizzaQoi
 
                             if (vr > -3 && vr < 2 &&
                                 vg > -3 && vg < 2 &&
-                                vb > -3 && vb < 2
-                            )
+                                vb > -3 && vb < 2)
                             {
                                 bytes[p++] = (byte)(QOI_OP_DIFF | (vr + 2) << 4 | (vg + 2) << 2 | (vb + 2));
                             }

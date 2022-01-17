@@ -195,8 +195,7 @@ namespace SharpQoi
 
                             if (vr > -3 && vr < 2 &&
                                 vg > -3 && vg < 2 &&
-                                vb > -3 && vb < 2
-                            )
+                                vb > -3 && vb < 2)
                             {
                                 bytes[p++] = (byte)(QOI_OP_DIFF | (vr + 2) << 4 | (vg + 2) << 2 | (vb + 2));
                             }
