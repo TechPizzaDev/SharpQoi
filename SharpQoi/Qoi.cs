@@ -174,7 +174,7 @@ namespace SharpQoi
                         run = 0;
                     }
 
-                    int index_pos = QOI_COLOR_HASH(px) % 64;
+                    uint index_pos = (uint)QOI_COLOR_HASH(px) % 64;
 
                     if (index[index_pos].Equals(px))
                     {
@@ -351,7 +351,7 @@ namespace SharpQoi
                         run = b1 & 0x3f;
                     }
 
-                    index[QOI_COLOR_HASH(px) % 64] = px;
+                    index[(uint)QOI_COLOR_HASH(px) % 64] = px;
                 }
 
                 if (channels == 4)
