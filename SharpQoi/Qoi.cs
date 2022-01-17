@@ -193,8 +193,7 @@ namespace SharpQoi
                             int vg_r = vr - vg;
                             int vg_b = vb - vg;
 
-                            if (
-                                vr > -3 && vr < 2 &&
+                            if (vr > -3 && vr < 2 &&
                                 vg > -3 && vg < 2 &&
                                 vb > -3 && vb < 2
                             )
@@ -204,8 +203,7 @@ namespace SharpQoi
                             else if (
                                 vg_r > -9 && vg_r < 8 &&
                                 vg > -33 && vg < 32 &&
-                                vg_b > -9 && vg_b < 8
-                            )
+                                vg_b > -9 && vg_b < 8)
                             {
                                 bytes[p++] = (byte)(QOI_OP_LUMA | (vg + 32));
                                 bytes[p++] = (byte)((vg_r + 8) << 4 | (vg_b + 8));

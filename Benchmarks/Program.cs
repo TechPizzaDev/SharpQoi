@@ -6,6 +6,7 @@ using BenchmarkDotNet.Toolchains.InProcess.Emit;
 using BenchmarkDotNet.Loggers;
 using BenchmarkDotNet.Columns;
 using BenchmarkDotNet.Exporters;
+using Perfolizer.Horology;
 
 BenchmarkSwitcher.FromTypes(new[]
 {
@@ -19,6 +20,9 @@ class Config : ManualConfig
     {
         AddJob(Job.ShortRun
             .WithLaunchCount(1)
+            .WithWarmupCount(6)
+            .WithIterationTime(TimeInterval.FromSeconds(1))
+            .WithIterationCount(6)
             .WithToolchain(InProcessEmitToolchain.Instance));
 
         AddLogger(new ConsoleLogger());
