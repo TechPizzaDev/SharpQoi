@@ -157,7 +157,7 @@ namespace SharpQoi
                     px.B = pixels[px_pos + 2];
                 }
 
-                if (px.Equals(px_prev))
+                if (*(int*)&px == *(int*)&px_prev)
                 {
                     run++;
                     if (run == 62 || px_pos == px_end)
@@ -176,7 +176,7 @@ namespace SharpQoi
 
                     uint index_pos = (uint)QOI_COLOR_HASH(px) % 64;
 
-                    if (index[index_pos].Equals(px))
+                    if (*(int*)&index[index_pos] == *(int*)&px)
                     {
                         bytes[p++] = (byte)(QOI_OP_INDEX | index_pos);
                     }
