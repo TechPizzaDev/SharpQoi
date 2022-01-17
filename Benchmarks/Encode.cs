@@ -1,5 +1,6 @@
 ﻿using System.IO;
 using BenchmarkDotNet.Attributes;
+using PizzaQoi;
 using SharpQoi;
 
 namespace Benchmarks
@@ -37,13 +38,30 @@ namespace Benchmarks
         }
 
         [Benchmark]
-        public void RGB()
+        public void Qoi_RGB()
         {
             (byte[] pixels, QoiDesc desc) = images[0];
             fixed (byte* data = pixels)
             {
                 void* result = Qoi.Encode(data, desc, out uint length);
                 Qoi.Free(result);
+            }
+        }
+
+        [Benchmark]
+        public void Pqoi_RGB()
+        {
+            (byte[] pixels, QoiDesc desc) = images[0];
+            fixed (byte* data = pixels)
+            {
+                void* result = Pqoi.Encode(data, new PqoiDesc()
+                {
+                    width = desc.width,
+                    height = desc.height,
+                    channels = desc.channels,
+                    colorspace = desc.colorspace
+                }, out uint length);
+                Pqoi.Free(result);
             }
         }
     }
